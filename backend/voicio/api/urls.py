@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     supplier_list, supplier_detail,
     product_list, product_detail,
-    transaction_list, transaction_detail
+    transaction_list, transaction_detail,
+    update_product_by_id
 )
 
 urlpatterns = [
@@ -17,4 +18,7 @@ urlpatterns = [
     # Transaction URLs
     path('transactions/', transaction_list, name='transaction_list'),
     path('transactions/<int:transaction_id>/', transaction_detail, name='transaction_detail'),
+
+    #update product url
+    path('product/update/<int:product_id>/', update_product_by_id, name='update_product_by_id'),
 ]

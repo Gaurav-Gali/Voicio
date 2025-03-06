@@ -114,3 +114,21 @@ def transaction_detail(request, transaction_id):
     elif request.method == 'DELETE':
         transaction.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['PUT'])  # Ensures only PUT requests are allowed
+def update_product_by_id(request, product_id):
+    """
+    Fully replace the product details using the provided JSON.
+    """
+    try:
+        product = Product.objects.get(id=product_id)
+    except Product.DoesNotExist:
+        return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Replace all fields with the new data
+    serializer = ProductSerializer(product, data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
