@@ -27,14 +27,14 @@ export default function Home() {
                         Voicio
                     </h1>
 
-                    <p className="text-xl md:text-2xl mb-8 text-slate-600 max-w-2xl mx-auto">
+                    <p className="text-2xl mb-8 text-slate-600 max-w-2xl mx-auto">
                         Query your databases with the power of your voice. No
                         more complex SQL - just ask and receive.
                     </p>
                     <VoiceWaveform />
                     <Button
-                        onClick={() => router.push("/dashboard")}
-                        className="rounded-xl cursor-pointer text-lg font-semibold 
+                        onClick={() => router.push("dashboard/")}
+                        className="rounded-full cursor-pointer text-lg font-semibold 
                           bg-gradient-to-r from-blue-500 to-blue-600 hover:opacity-[90%] transition-all duration-150 text-white p-7"
                     >
                         <div className="flex items-center justify-center gap-3 m-1">
