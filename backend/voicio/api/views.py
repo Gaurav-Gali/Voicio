@@ -1,7 +1,15 @@
-from rest_framework.response import Response
-from rest_framework.decorators import api_view
-# Create your views here.
+from rest_framework import viewsets
+from .models import Supplier, Product, Transaction
+from .serializers import SupplierSerializer, ProductSerializer, TransactionSerializer
 
-@api_view(["get"])
-def get_all_products(request):
-    return Response("All products" ,status=200)
+class SupplierViewSet(viewsets.ModelViewSet):
+    queryset = Supplier.objects.all()
+    serializer_class = SupplierSerializer
+
+class ProductViewSet(viewsets.ModelViewSet):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+
+class TransactionViewSet(viewsets.ModelViewSet):
+    queryset = Transaction.objects.all()
+    serializer_class = TransactionSerializer
