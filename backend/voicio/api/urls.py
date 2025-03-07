@@ -3,7 +3,7 @@ from .views import (
     supplier_list, supplier_detail,
     product_list, product_detail,
     transaction_list, transaction_detail,
-    update_product_by_id
+    update_product_by_id , ai_chat
 )
 
 urlpatterns = [
@@ -21,4 +21,5 @@ urlpatterns = [
 
     #update product url
     path('product/update/<int:product_id>/', update_product_by_id, name='update_product_by_id'),
+    path('ai/chat/', ai_chat, name='ai_chat'),
 ]

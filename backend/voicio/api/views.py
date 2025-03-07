@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Supplier, Product, Transaction
 from .serializers import SupplierSerializer, ProductSerializer, TransactionSerializer
+import ollama
 
 # Supplier API Views
 @api_view(['GET', 'POST'])
@@ -132,3 +133,35 @@ def update_product_by_id(request, product_id):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+def ai_chat(request):
+    """
+    This endpoint takes a 'prompt' and 'context_history' as input
+    and returns the AI-generated response from a local Ollama model.
+    """
+    prompt = request.data.get("prompt")
+    context_history = request.data.get("context_history", [])
+
+    if not prompt:
+        return Response({"error": "Prompt is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Ensure context_history is a list
+    if not isinstance(context_history, list):
+        return Response({"error": "context_history must be a list"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Append new user message to conversation history
+    messages = context_history + [{"role": "user", "content": prompt}]
+
+    try:
+        # Generate response using Ollama with context history
+        response = ollama.chat(model="mistral", messages=messages)
+        ai_response = response.get("message", {}).get("content", "")
+
+        # Append AI response to context history
+        messages.append({"role": "assistant", "content": ai_response})
+
+        return Response({"response": ai_response, "updated_context": messages}, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
