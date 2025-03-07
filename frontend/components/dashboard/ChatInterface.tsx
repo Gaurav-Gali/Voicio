@@ -32,7 +32,7 @@ export default function ChatInterface() {
     const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
     const [isListening, setIsListening] = useState<boolean>(false);
     const recognitionRef = useRef<SpeechRecognition | null>(null);
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null); // Timeout reference
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const speakText = (text: string) => {
         if (!window.speechSynthesis) {
@@ -61,10 +61,10 @@ export default function ChatInterface() {
         } else {
             const userMessage: Message = {
                 role: "agent",
-                content: "Hello, how may I help you today!",
+                content:
+                    "Hello! I'm here to assist you. Go ahead and start speaking in any way you like. 😊",
                 timestamp: new Date().toLocaleTimeString(),
             };
-            speakText("Hello, how may I help you today!");
             setMessages([userMessage]);
         }
     }, [messages]);
@@ -78,30 +78,41 @@ export default function ChatInterface() {
         }
     };
 
-    const handleChat = async () => {
+    const handleChat = async (inputText = prompts) => {
         // Stop listening if it's currently active
         if (isListening) {
             stopListening();
         }
 
-        const currentTone = localStorage.getItem("tone") || "Formal";
+        // Clear timeout to prevent auto-send after manual send
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+        }
 
-        let prompt = Prompts(prompts, currentTone);
-        if (!prompt.trim()) return;
+        // Use the provided inputText or fall back to prompts state
+        const textToSend = inputText.trim();
+        if (!textToSend) return;
+
+        const currentTone = localStorage.getItem("tone") || "Formal";
+        const promptWithTone = Prompts(textToSend, currentTone);
 
         const userMessage: Message = {
             role: "user",
-            content: prompts,
+            content: textToSend,
             timestamp: new Date().toLocaleTimeString(),
         };
 
-        setMessages((prev) => [...prev, userMessage]);
+        // Clear the prompt state
         setPrompt("");
+
+        // Add user message to chat
+        setMessages((prev) => [...prev, userMessage]);
         setIsLoading(true);
 
         try {
             const contextMessages = messages.slice(-5).map((msg) => ({
-                role: msg.role,
+                role: msg.role === "agent" ? "assistant" : "user", // Ensure correct role format for API
                 content: msg.content,
             }));
 
@@ -111,10 +122,14 @@ export default function ChatInterface() {
                 body: JSON.stringify({
                     messages: [
                         ...contextMessages,
-                        { role: "user", content: prompt },
+                        { role: "user", content: promptWithTone },
                     ],
                 }),
             });
+
+            if (!res.ok) {
+                throw new Error(`API error: ${res.status}`);
+            }
 
             const data = await res.json();
 
@@ -137,15 +152,41 @@ export default function ChatInterface() {
                 ...prev,
                 {
                     role: "agent",
-                    content: "Error fetching response.",
+                    content:
+                        "Sorry, I couldn't process your request. Please try again.",
                     timestamp: new Date().toLocaleTimeString(),
                 },
             ]);
         }
         setIsLoading(false);
+
+        // Restart listening with a fresh recognition instance after a short delay
+        if (isListening) {
+            setTimeout(() => {
+                restartListening();
+            }, 500);
+        }
+    };
+
+    // Function to restart speech recognition with a clean state
+    const restartListening = () => {
+        // First ensure any existing recognition is stopped
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+            recognitionRef.current = null;
+        }
+
+        // Wait a brief moment to ensure it's fully stopped
+        setTimeout(() => {
+            // Start fresh
+            startListening();
+        }, 200);
     };
 
     const startListening = () => {
+        // Clear prompt first
+        setPrompt("");
+
         const SpeechRecognition =
             (window as any).SpeechRecognition ||
             (window as any).webkitSpeechRecognition;
@@ -156,50 +197,113 @@ export default function ChatInterface() {
         }
 
         const recognition = new SpeechRecognition();
-        recognition.continuous = true; // Enable continuous listening
-        recognition.interimResults = true; // Show intermediate results
+        recognition.continuous = true;
+        recognition.interimResults = true;
         recognition.lang = "en-US";
 
-        recognition.onstart = () => setIsListening(true);
+        recognition.onstart = () => {
+            console.log("Speech recognition started");
+            setIsListening(true);
+        };
+
         recognition.onend = () => {
+            console.log("Speech recognition ended");
             setIsListening(false);
-            // Restart listening if it ends unexpectedly
-            if (isListening) {
+            // Only auto-restart if we're supposed to be listening
+            if (isListening && !isLoading) {
                 startListening();
             }
         };
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
-            let finalTranscript = "";
-            for (let i = 0; i < event.results.length; i++) {
-                finalTranscript += event.results[i][0].transcript + " ";
-            }
-            setPrompt(finalTranscript.trim());
+            let transcript = "";
+            // Just get the latest result - not cumulative results
+            const latestResult = event.results[event.results.length - 1];
 
-            // Reset the timeout for detecting pauses
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
+            if (latestResult.isFinal) {
+                transcript = latestResult[0].transcript.trim();
+                console.log("Final transcript:", transcript);
 
-            // Set a new timeout for 3 seconds
-            timeoutRef.current = setTimeout(() => {
-                handleChat(); // Automatically send the query after 3 seconds of silence
-            }, 3000);
+                // Get all previous transcripts to construct the full prompt
+                let fullTranscript = prompts;
+                if (fullTranscript && !fullTranscript.endsWith(" ")) {
+                    fullTranscript += " ";
+                }
+                fullTranscript += transcript;
+
+                setPrompt(fullTranscript);
+
+                // Reset the timeout for detecting pauses
+                if (timeoutRef.current) {
+                    clearTimeout(timeoutRef.current);
+                }
+
+                // Set timeout for auto-sending after pause
+                if (fullTranscript.trim()) {
+                    timeoutRef.current = setTimeout(() => {
+                        console.log(
+                            "Auto-sending after pause:",
+                            fullTranscript
+                        );
+                        handleChat(fullTranscript);
+                    }, 1000);
+                }
+            } else {
+                // For interim results, just show what's being processed
+                transcript = latestResult[0].transcript.trim();
+
+                // Get all previous transcripts plus this interim one
+                let fullTranscript = prompts;
+                if (fullTranscript && !fullTranscript.endsWith(" ")) {
+                    fullTranscript += " ";
+                }
+                fullTranscript += transcript;
+
+                setPrompt(fullTranscript);
+            }
         };
 
-        recognition.start();
-        recognitionRef.current = recognition; // Store the recognition instance
+        recognition.onerror = (event: any) => {
+            console.error("Speech recognition error", event.error);
+            setIsListening(false);
+
+            // Attempt to restart on errors
+            setTimeout(() => {
+                if (isListening && !isLoading) {
+                    startListening();
+                }
+            }, 1000);
+        };
+
+        try {
+            recognition.start();
+            recognitionRef.current = recognition;
+        } catch (error) {
+            console.error("Error starting speech recognition:", error);
+        }
     };
 
     const stopListening = () => {
+        setIsListening(false);
+
         if (recognitionRef.current) {
             recognitionRef.current.stop();
-            recognitionRef.current = null; // Clear the reference
+            recognitionRef.current = null;
         }
-        // Clear the timeout when stopping listening
+
         if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
+        }
+    };
+
+    const toggleListening = () => {
+        if (isListening) {
+            stopListening();
+        } else {
+            // Clear the prompt before starting
+            setPrompt("");
+            startListening();
         }
     };
 
@@ -208,10 +312,7 @@ export default function ChatInterface() {
         startListening();
 
         return () => {
-            stopListening(); // Stop listening when the component unmounts
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
+            stopListening();
         };
     }, []);
 
@@ -282,14 +383,14 @@ export default function ChatInterface() {
                         onKeyDown={(e) => e.key === "Enter" && handleChat()}
                     />
                     <Button
-                        onClick={isListening ? stopListening : startListening}
+                        onClick={toggleListening}
                         disabled={isLoading}
                         className="bg-white border text-black cursor-pointer hover:bg-gray-100 py-5"
                     >
                         {isListening ? "Stop Listening" : "Start Listening"}
                     </Button>
                     <Button
-                        onClick={handleChat}
+                        onClick={() => handleChat()}
                         disabled={isLoading || !prompts}
                     >
                         {isLoading ? "Sending..." : "Send"}
