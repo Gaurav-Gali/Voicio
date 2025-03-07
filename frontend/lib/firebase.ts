@@ -3,13 +3,13 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCNWXpJza-hCLaraW5Jbt_bGc2o4S1EFNk",
-    authDomain: "voicia-65f6d.firebaseapp.com",
-    projectId: "voicia-65f6d",
-    storageBucket: "voicia-65f6d.firebasestorage.app",
-    messagingSenderId: "510127852620",
-    appId: "1:510127852620:web:be4844451731ad58eff8e9",
-    measurementId: "G-35VBY9TNGE",
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+    measurementId: process.env.NEXT_PUBLIC_MEASUREMENT_ID,
 };
 
 // Initialize Firebase
