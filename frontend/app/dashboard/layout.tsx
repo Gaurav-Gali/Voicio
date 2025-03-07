@@ -3,7 +3,6 @@ import { useState } from "react"; // Import useState
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-    LayoutGrid,
     Settings,
     ChevronDown,
     ChevronUp,
@@ -15,62 +14,112 @@ import {
 import { UserButton, useUser } from "@clerk/nextjs";
 import CallCard from "@/components/dashboard/CallCard";
 import Loader from "@/components/dashboard/Loader";
+import { useEffect } from "react";
 
-interface CallDetails {
-    duration: string;
-    topic: string;
-    date: string;
-    participant: string;
-    status: "completed" | "in call";
-}
+import { db } from "@/lib/firebase"; // Ensure Firebase is correctly imported
+import {
+    collection,
+    addDoc,
+    serverTimestamp,
+    getDocs,
+    query,
+    where,
+} from "firebase/firestore";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
     const { isLoaded, user } = useUser();
+    const [loading, setLoading] = useState(true);
+    const [messages, setMessages] = useState<any[]>([]);
+    const [saving, setSaving] = useState(false);
     const [openSection, setOpenSection] = useState<
         "orders" | "pendingOrders" | "settings" | null
-    >(null); // State for dropdown
+    >(null);
 
-    const meetings: CallDetails[] = [
-        {
-            duration: "45 minutes",
-            topic: "Quarterly Business Review",
-            date: "March 15, 2024 - 2:30 PM",
-            participant: "Sarah Anderson",
-            status: "in call",
-        },
-        {
-            duration: "30 minutes",
-            topic: "Product Launch Planning",
-            date: "March 10, 2024 - 10:00 AM",
-            participant: "John Doe",
-            status: "completed",
-        },
-        {
-            duration: "1 hour",
-            topic: "Marketing Strategy Discussion",
-            date: "March 5, 2024 - 3:00 PM",
-            participant: "Emily Clark",
-            status: "completed",
-        },
-        {
-            duration: "15 minutes",
-            topic: "Budget Approval",
-            date: "March 1, 2024 - 11:00 AM",
-            participant: "Michael Brown",
-            status: "completed",
-        },
-        {
-            duration: "1 hour 30 minutes",
-            topic: "Team Building Workshop",
-            date: "February 25, 2024 - 9:00 AM",
-            participant: "Laura Wilson",
-            status: "completed",
-        },
-    ];
+    const [tone, setTone] = useState("formal");
+
+    useEffect(() => {
+        const storedTone = localStorage.getItem("tone") || "formal";
+        setTone(storedTone);
+    }, []);
+
+    const handleToneChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newTone = e.target.value;
+        setTone(newTone);
+        localStorage.setItem("tone", newTone);
+    };
+
+    const saveConversation = async () => {
+        setSaving(true);
+        try {
+            const chatMessages = JSON.parse(
+                localStorage.getItem("chatMessages") || "[]"
+            );
+
+            if (chatMessages.length === 0) {
+                setSaving(false);
+                alert("No messages to save!");
+                return;
+            }
+
+            await addDoc(collection(db, "messages"), {
+                userId: user?.id,
+                messages: chatMessages,
+                timestamp: serverTimestamp(),
+            });
+
+            setSaving(false);
+            alert("Conversation saved successfully!");
+            localStorage.removeItem("chatMessages"); // Clear after saving
+        } catch (error) {
+            console.error("Error saving conversation:", error);
+            setSaving(false);
+            alert("Failed to save conversation!");
+        }
+        setSaving(false);
+    };
+
+    useEffect(() => {
+        const fetchMessages = async () => {
+            if (!user) return;
+            setLoading(true);
+
+            try {
+                const messagesRef = collection(db, "messages");
+                const q = query(messagesRef, where("userId", "==", user.id));
+                const querySnapshot = await getDocs(q);
+
+                const fetchedMessages = querySnapshot.docs.map((doc) => ({
+                    id: doc.id,
+                    ...doc.data(),
+                }));
+
+                setMessages(fetchedMessages);
+            } catch (error) {
+                console.error("Error fetching messages:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (user) {
+            fetchMessages();
+        }
+    }, [user]);
 
     if (!isLoaded) {
         return <Loader />;
     }
+
+    const handleCallCardClick = (message: any) => {
+        // Clear current chats in local storage
+        localStorage.removeItem("chatMessages");
+
+        // Replace with the chats from the selected call
+        localStorage.setItem("chatMessages", JSON.stringify(message.messages));
+
+        // Reload the page
+        window.location.reload();
+    };
 
     // Toggle dropdown sections
     const toggleSection = (
@@ -157,7 +206,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                                 <Button
                                     variant="ghost"
                                     className="w-full justify-between cursor-pointer"
-                                    onClick={() => toggleSection("settings")}
+                                    onClick={() =>
+                                        setOpenSection(
+                                            openSection === "settings"
+                                                ? null
+                                                : "settings"
+                                        )
+                                    }
                                 >
                                     <div className="flex items-center">
                                         <Settings className="mr-2 h-4 w-4" />
@@ -173,20 +228,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                                     <div className="pl-8 mt-2 space-y-2">
                                         <div className="flex flex-col gap-1">
                                             <label className="text-sm font-medium">
-                                                Phone Number
-                                            </label>
-                                            <input
-                                                type="tel"
-                                                placeholder="Enter phone number"
-                                                className="p-2 border rounded-lg text-sm"
-                                            />
-                                        </div>
-                                        <div className="flex flex-col gap-1">
-                                            <label className="text-sm font-medium">
                                                 Tone of Reply
                                             </label>
                                             <div className="relative">
-                                                <select className="appearance-none w-full p-2 border outline-none rounded-lg text-sm bg-white cursor-pointer">
+                                                <select
+                                                    value={tone}
+                                                    onChange={handleToneChange}
+                                                    className="appearance-none w-full p-2 border outline-none rounded-lg text-sm bg-white cursor-pointer"
+                                                >
                                                     <option value="formal">
                                                         Formal
                                                     </option>
@@ -197,22 +246,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                                                         Friendly
                                                     </option>
                                                 </select>
-                                                {/* Custom dropdown arrow */}
                                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                                                    <svg
-                                                        className="h-4 w-4"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        viewBox="0 0 24 24"
-                                                        xmlns="http://www.w3.org/2000/s"
-                                                    >
-                                                        <path
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
-                                                            strokeWidth={2}
-                                                            d="M19 9l-7 7-7-7"
-                                                        />
-                                                    </svg>
+                                                    <ChevronDown className="h-4 w-4" />
                                                 </div>
                                             </div>
                                         </div>
@@ -249,8 +284,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             Voice conversation
                         </h1>
                         <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="sm">
-                                Save conversation
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="cursor-pointer"
+                                onClick={() => saveConversation()}
+                            >
+                                {saving ? (
+                                    <p>Saving conversation...</p>
+                                ) : (
+                                    <p>Save conversation</p>
+                                )}
                             </Button>
                             <Button
                                 variant="ghost"
@@ -275,23 +319,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                                 variant="secondary"
                                 size="sm"
                                 className="rounded-lg cursor-pointer text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:opacity-[90%] transition-all duration-150 p-5 w-full"
+                                onClick={() => {
+                                    localStorage.setItem("chatMessages", "[]");
+                                    window.location.reload();
+                                }}
                             >
                                 Start call
                             </Button>
                         </div>
                         {/* Calls */}
                         <div className="h-[85vh] overflow-y-auto">
-                            {meetings.map((meeting, index) => {
+                            {messages.map((message, index) => {
                                 return (
                                     <div
                                         className={
-                                            index !== meetings.length - 1
+                                            index !== messages.length - 1
                                                 ? "border-b"
                                                 : ""
                                         }
                                         key={index}
+                                        onClick={() =>
+                                            handleCallCardClick(message)
+                                        }
                                     >
-                                        <CallCard call={meeting} />
+                                        <CallCard
+                                            call={{
+                                                ...message,
+                                                status: "completed",
+                                            }}
+                                        />
                                     </div>
                                 );
                             })}
