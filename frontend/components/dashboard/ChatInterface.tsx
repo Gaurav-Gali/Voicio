@@ -147,139 +147,6 @@ export default function ChatInterface() {
         );
     };
 
-    // Function to find relevant products based on user query
-    const filterProductsByQuery = (products: Product[], query: string) => {
-        if (!products || products.length === 0) return [];
-
-        const lowercaseQuery = query.toLowerCase();
-
-        return products.filter((product) => {
-            // Check various fields for matches
-            return (
-                product.product_name.toLowerCase().includes(lowercaseQuery) ||
-                product.category.toLowerCase().includes(lowercaseQuery) ||
-                product.brand.toLowerCase().includes(lowercaseQuery) ||
-                product.description.toLowerCase().includes(lowercaseQuery) ||
-                // For numeric values, convert to string first
-                product.price.toString().includes(lowercaseQuery) ||
-                product.discount_price.toString().includes(lowercaseQuery)
-            );
-        });
-    };
-
-    // Function to format product data for response
-    const formatProductResponse = (products: Product[], query: string) => {
-        if (!products || products.length === 0) {
-            return "I couldn't find any products matching your query. Could you please try a different search?";
-        }
-
-        // Determine what kind of product query this is
-        const lowercaseQuery = query.toLowerCase();
-
-        // Price query
-        if (
-            lowercaseQuery.includes("price") ||
-            lowercaseQuery.includes("cost") ||
-            lowercaseQuery.includes("how much")
-        ) {
-            return `Here are the prices for the products matching your query:\n\n${products
-                .map((p) => {
-                    const discountInfo =
-                        p.discount_price !== p.price
-                            ? ` (Discounted from $${p.price} to $${p.discount_price})`
-                            : "";
-                    return `${p.product_name}: $${p.discount_price}${discountInfo}`;
-                })
-                .join("\n")}`;
-        }
-
-        // Stock/availability query
-        if (
-            lowercaseQuery.includes("stock") ||
-            lowercaseQuery.includes("available") ||
-            lowercaseQuery.includes("availability")
-        ) {
-            return `Here's the availability of products matching your query:\n\n${products
-                .map(
-                    (p) =>
-                        `${p.product_name}: ${
-                            p.quantity_available > 0
-                                ? `${p.quantity_available} in stock`
-                                : "Out of stock"
-                        }`
-                )
-                .join("\n")}`;
-        }
-
-        // Category query
-        if (
-            lowercaseQuery.includes("category") ||
-            lowercaseQuery.includes("categories") ||
-            lowercaseQuery.includes("type")
-        ) {
-            const categories = [...new Set(products.map((p) => p.category))];
-            return `I found products in the following categories: ${categories.join(
-                ", "
-            )}`;
-        }
-
-        // Brand query
-        if (
-            lowercaseQuery.includes("brand") ||
-            lowercaseQuery.includes("manufacturer") ||
-            lowercaseQuery.includes("make")
-        ) {
-            const brands = [...new Set(products.map((p) => p.brand))];
-            return `I found products from the following brands: ${brands.join(
-                ", "
-            )}`;
-        }
-
-        // Discount query
-        if (
-            lowercaseQuery.includes("discount") ||
-            lowercaseQuery.includes("sale") ||
-            lowercaseQuery.includes("deal")
-        ) {
-            const discountedProducts = products.filter(
-                (p) => p.price !== p.discount_price
-            );
-
-            if (discountedProducts.length === 0) {
-                return "I couldn't find any products currently on discount.";
-            }
-
-            return `Here are the products currently on discount:\n\n${discountedProducts
-                .map(
-                    (p) =>
-                        `${p.product_name}\nOriginal Price: $${
-                            p.price
-                        }\nDiscounted Price: $${p.discount_price}\nSavings: $${(
-                            parseFloat(p.price) - parseFloat(p.discount_price)
-                        ).toFixed(2)}`
-                )
-                .join("\n\n")}`;
-        }
-
-        // Default: general product info
-        return `Here are the products matching your query:\n\n${products
-            .map(
-                (p) =>
-                    `${p.product_name}\nBrand: ${p.brand}\nPrice: $${
-                        p.discount_price
-                    }${
-                        p.discount_price !== p.price
-                            ? ` (Original: $${p.price})`
-                            : ""
-                    }\nCategory: ${p.category}\n${
-                        p.quantity_available > 0
-                            ? `${p.quantity_available} in stock`
-                            : "Out of stock"
-                    }\n${p.description ? `Description: ${p.description}` : ""}`
-            )
-            .join("\n\n")}`;
-    };
-
     const handleChat = async (inputText = prompts) => {
         // Stop listening if it's currently active
         if (isListening) {
@@ -318,28 +185,12 @@ export default function ChatInterface() {
                 const allProducts = await fetchProductData();
 
                 console.log("Products : ", allProducts);
-                
 
                 if (allProducts && allProducts.length > 0) {
-                    // Filter products based on the query
-                    const filteredProducts = filterProductsByQuery(
-                        allProducts,
-                        textToSend
-                    );
-
-                    if (filteredProducts.length > 0) {
-                        // Format response based on filtered product data
-                        response = formatProductResponse(
-                            filteredProducts,
-                            textToSend
-                        );
-                    } else {
-                        // No matching products, enhance query with product context and use AI
-                        const productContext = `The user is asking about products, but I couldn't find exact matches. Here's our product catalog: ${JSON.stringify(
-                            allProducts.slice(0, 3)
-                        )}. Based on this catalog and the user query: "${textToSend}", provide a helpful response.`;
-                        response = await getAIResponse(productContext);
-                    }
+                    const productContext = `The user is asking about products. Here's our product catalog: ${JSON.stringify(
+                        allProducts
+                    )}. Based on this catalog and the user query: "${textToSend}", provide a helpful response.`;
+                    response = await getAIResponse(productContext);
                 } else {
                     // No products found, use AI fallback
                     response = await getAIResponse(
@@ -392,14 +243,12 @@ export default function ChatInterface() {
             content: msg.content,
         }));
 
-        const res = await fetch("/api/gemini", {
+        const res = await fetch("http://127.0.0.1:8000/api/ai/chat/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                messages: [
-                    ...contextMessages,
-                    { role: "user", content: promptWithTone },
-                ],
+                prompt: promptWithTone,
+                context_history: contextMessages,
             }),
         });
 
@@ -423,12 +272,6 @@ export default function ChatInterface() {
             recognitionRef.current.stop();
             recognitionRef.current = null;
         }
-
-        // Wait a brief moment to ensure it's fully stopped
-        setTimeout(() => {
-            // Start fresh
-            startListening();
-        }, 200);
     };
 
     const startListening = () => {
@@ -494,7 +337,7 @@ export default function ChatInterface() {
                             fullTranscript
                         );
                         handleChat(fullTranscript);
-                    }, 3000);
+                    }, 100);
                 }
             } else {
                 // For interim results, just show what's being processed
@@ -520,7 +363,7 @@ export default function ChatInterface() {
                 if (isListening && !isLoading) {
                     startListening();
                 }
-            }, 1000);
+            }, 500);
         };
 
         try {

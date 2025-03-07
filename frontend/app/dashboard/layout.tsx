@@ -76,6 +76,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             alert("Failed to save conversation!");
         }
         setSaving(false);
+        window.location.reload();
     };
 
     useEffect(() => {

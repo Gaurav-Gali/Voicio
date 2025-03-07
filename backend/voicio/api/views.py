@@ -136,10 +136,6 @@ def update_product_by_id(request, product_id):
 
 @api_view(['POST'])
 def ai_chat(request):
-    """
-    This endpoint takes a 'prompt' and 'context_history' as input
-    and returns the AI-generated response from a local Ollama model.
-    """
     prompt = request.data.get("prompt")
     context_history = request.data.get("context_history", [])
 
@@ -154,8 +150,7 @@ def ai_chat(request):
     messages = context_history + [{"role": "user", "content": prompt}]
 
     try:
-        # Generate response using Ollama with context history
-        response = ollama.chat(model="mistral", messages=messages)
+        response = ollama.chat(model="qwen2.5-coder:1.5b", messages=messages)
         ai_response = response.get("message", {}).get("content", "")
 
         # Append AI response to context history
