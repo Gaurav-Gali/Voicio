@@ -19,6 +19,21 @@ interface Message {
     timestamp: string;
 }
 
+interface Product {
+    id: number;
+    product_name: string;
+    category: string;
+    brand: string;
+    description: string;
+    price: string;
+    discount_price: string;
+    quantity_available: number;
+    reorder_level: number;
+    date_added: string;
+    last_updated: string;
+    supplier: number;
+}
+
 export default function ChatInterface() {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [prompts, setPrompt] = useState("");
@@ -29,6 +44,7 @@ export default function ChatInterface() {
         return [];
     });
 
+    const [productData, setProductData] = useState<Product[]>([]);
     const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
     const [isListening, setIsListening] = useState<boolean>(false);
     const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -62,7 +78,7 @@ export default function ChatInterface() {
             const userMessage: Message = {
                 role: "agent",
                 content:
-                    "Hello! I'm here to assist you. Go ahead and start speaking in any way you like. 😊",
+                    "Hello! I'm here to assist you. You can ask me about our products or start speaking in any way you like. 😊",
                 timestamp: new Date().toLocaleTimeString(),
             };
             setMessages([userMessage]);
@@ -76,6 +92,192 @@ export default function ChatInterface() {
         } catch (error) {
             toast.error("Failed to copy text!");
         }
+    };
+
+    // Fetch all products from the API - no query required
+    const fetchProductData = async () => {
+        try {
+            const response = await fetch(`http://127.0.0.1:8000/api/products/`); // Ensure trailing slash
+            console.log("Response status:", response.status); // Log the status code
+
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log("Fetched product data:", data); // Log the data
+            setProductData(data);
+            return data;
+        } catch (error) {
+            console.error("Error fetching product data:", error);
+            toast.error(
+                "Failed to fetch product data. Please try again later."
+            );
+            return null;
+        }
+    };
+
+    // Function to determine if query is about products
+    const isProductQuery = (text: string) => {
+        const productKeywords = [
+            "product",
+            "products",
+            "item",
+            "items",
+            "catalog",
+            "price",
+            "cost",
+            "buy",
+            "purchase",
+            "availability",
+            "in stock",
+            "category",
+            "categories",
+            "inventory",
+            "iphone",
+            "electronics",
+            "discount",
+            "brand",
+            "supplier",
+        ];
+
+        const lowercaseText = text.toLowerCase();
+        return productKeywords.some((keyword) =>
+            lowercaseText.includes(keyword)
+        );
+    };
+
+    // Function to find relevant products based on user query
+    const filterProductsByQuery = (products: Product[], query: string) => {
+        if (!products || products.length === 0) return [];
+
+        const lowercaseQuery = query.toLowerCase();
+
+        return products.filter((product) => {
+            // Check various fields for matches
+            return (
+                product.product_name.toLowerCase().includes(lowercaseQuery) ||
+                product.category.toLowerCase().includes(lowercaseQuery) ||
+                product.brand.toLowerCase().includes(lowercaseQuery) ||
+                product.description.toLowerCase().includes(lowercaseQuery) ||
+                // For numeric values, convert to string first
+                product.price.toString().includes(lowercaseQuery) ||
+                product.discount_price.toString().includes(lowercaseQuery)
+            );
+        });
+    };
+
+    // Function to format product data for response
+    const formatProductResponse = (products: Product[], query: string) => {
+        if (!products || products.length === 0) {
+            return "I couldn't find any products matching your query. Could you please try a different search?";
+        }
+
+        // Determine what kind of product query this is
+        const lowercaseQuery = query.toLowerCase();
+
+        // Price query
+        if (
+            lowercaseQuery.includes("price") ||
+            lowercaseQuery.includes("cost") ||
+            lowercaseQuery.includes("how much")
+        ) {
+            return `Here are the prices for the products matching your query:\n\n${products
+                .map((p) => {
+                    const discountInfo =
+                        p.discount_price !== p.price
+                            ? ` (Discounted from $${p.price} to $${p.discount_price})`
+                            : "";
+                    return `${p.product_name}: $${p.discount_price}${discountInfo}`;
+                })
+                .join("\n")}`;
+        }
+
+        // Stock/availability query
+        if (
+            lowercaseQuery.includes("stock") ||
+            lowercaseQuery.includes("available") ||
+            lowercaseQuery.includes("availability")
+        ) {
+            return `Here's the availability of products matching your query:\n\n${products
+                .map(
+                    (p) =>
+                        `${p.product_name}: ${
+                            p.quantity_available > 0
+                                ? `${p.quantity_available} in stock`
+                                : "Out of stock"
+                        }`
+                )
+                .join("\n")}`;
+        }
+
+        // Category query
+        if (
+            lowercaseQuery.includes("category") ||
+            lowercaseQuery.includes("categories") ||
+            lowercaseQuery.includes("type")
+        ) {
+            const categories = [...new Set(products.map((p) => p.category))];
+            return `I found products in the following categories: ${categories.join(
+                ", "
+            )}`;
+        }
+
+        // Brand query
+        if (
+            lowercaseQuery.includes("brand") ||
+            lowercaseQuery.includes("manufacturer") ||
+            lowercaseQuery.includes("make")
+        ) {
+            const brands = [...new Set(products.map((p) => p.brand))];
+            return `I found products from the following brands: ${brands.join(
+                ", "
+            )}`;
+        }
+
+        // Discount query
+        if (
+            lowercaseQuery.includes("discount") ||
+            lowercaseQuery.includes("sale") ||
+            lowercaseQuery.includes("deal")
+        ) {
+            const discountedProducts = products.filter(
+                (p) => p.price !== p.discount_price
+            );
+
+            if (discountedProducts.length === 0) {
+                return "I couldn't find any products currently on discount.";
+            }
+
+            return `Here are the products currently on discount:\n\n${discountedProducts
+                .map(
+                    (p) =>
+                        `${p.product_name}\nOriginal Price: $${
+                            p.price
+                        }\nDiscounted Price: $${p.discount_price}\nSavings: $${(
+                            parseFloat(p.price) - parseFloat(p.discount_price)
+                        ).toFixed(2)}`
+                )
+                .join("\n\n")}`;
+        }
+
+        // Default: general product info
+        return `Here are the products matching your query:\n\n${products
+            .map(
+                (p) =>
+                    `${p.product_name}\nBrand: ${p.brand}\nPrice: $${
+                        p.discount_price
+                    }${
+                        p.discount_price !== p.price
+                            ? ` (Original: $${p.price})`
+                            : ""
+                    }\nCategory: ${p.category}\n${
+                        p.quantity_available > 0
+                            ? `${p.quantity_available} in stock`
+                            : "Out of stock"
+                    }\n${p.description ? `Description: ${p.description}` : ""}`
+            )
+            .join("\n\n")}`;
     };
 
     const handleChat = async (inputText = prompts) => {
@@ -94,9 +296,6 @@ export default function ChatInterface() {
         const textToSend = inputText.trim();
         if (!textToSend) return;
 
-        const currentTone = localStorage.getItem("tone") || "Formal";
-        const promptWithTone = Prompts(textToSend, currentTone);
-
         const userMessage: Message = {
             role: "user",
             content: textToSend,
@@ -111,37 +310,52 @@ export default function ChatInterface() {
         setIsLoading(true);
 
         try {
-            const contextMessages = messages.slice(-5).map((msg) => ({
-                role: msg.role === "agent" ? "assistant" : "user", // Ensure correct role format for API
-                content: msg.content,
-            }));
+            let response;
 
-            const res = await fetch("/api/gemini", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    messages: [
-                        ...contextMessages,
-                        { role: "user", content: promptWithTone },
-                    ],
-                }),
-            });
+            // Check if this is a product-related query
+            if (isProductQuery(textToSend)) {
+                // Fetch all product data from API
+                const allProducts = await fetchProductData();
 
-            if (!res.ok) {
-                throw new Error(`API error: ${res.status}`);
+                console.log("Products : ", allProducts);
+                
+
+                if (allProducts && allProducts.length > 0) {
+                    // Filter products based on the query
+                    const filteredProducts = filterProductsByQuery(
+                        allProducts,
+                        textToSend
+                    );
+
+                    if (filteredProducts.length > 0) {
+                        // Format response based on filtered product data
+                        response = formatProductResponse(
+                            filteredProducts,
+                            textToSend
+                        );
+                    } else {
+                        // No matching products, enhance query with product context and use AI
+                        const productContext = `The user is asking about products, but I couldn't find exact matches. Here's our product catalog: ${JSON.stringify(
+                            allProducts.slice(0, 3)
+                        )}. Based on this catalog and the user query: "${textToSend}", provide a helpful response.`;
+                        response = await getAIResponse(productContext);
+                    }
+                } else {
+                    // No products found, use AI fallback
+                    response = await getAIResponse(
+                        `The user asked about products: "${textToSend}", but our database seems to be empty or unavailable. Please provide a general helpful response.`
+                    );
+                }
+            } else {
+                // Not a product query, use normal AI response
+                response = await getAIResponse(textToSend);
             }
 
-            const data = await res.json();
-
-            if (!data || !data.response) {
-                throw new Error("Empty response from API");
-            }
-
-            speakText(data.response);
+            speakText(response);
 
             const agentMessage: Message = {
                 role: "agent",
-                content: data.response,
+                content: response,
                 timestamp: new Date().toLocaleTimeString(),
             };
 
@@ -166,6 +380,40 @@ export default function ChatInterface() {
                 restartListening();
             }, 500);
         }
+    };
+
+    // Function to get AI response from Gemini API
+    const getAIResponse = async (text: string) => {
+        const currentTone = localStorage.getItem("tone") || "Formal";
+        const promptWithTone = Prompts(text, currentTone);
+
+        const contextMessages = messages.slice(-5).map((msg) => ({
+            role: msg.role === "agent" ? "assistant" : "user",
+            content: msg.content,
+        }));
+
+        const res = await fetch("/api/gemini", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                messages: [
+                    ...contextMessages,
+                    { role: "user", content: promptWithTone },
+                ],
+            }),
+        });
+
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        if (!data || !data.response) {
+            throw new Error("Empty response from API");
+        }
+
+        return data.response;
     };
 
     // Function to restart speech recognition with a clean state
@@ -246,7 +494,7 @@ export default function ChatInterface() {
                             fullTranscript
                         );
                         handleChat(fullTranscript);
-                    }, 1000);
+                    }, 3000);
                 }
             } else {
                 // For interim results, just show what's being processed
@@ -309,6 +557,8 @@ export default function ChatInterface() {
 
     // Automatically start listening when the component mounts
     useEffect(() => {
+        // Prefetch product data on load
+        fetchProductData();
         startListening();
 
         return () => {
